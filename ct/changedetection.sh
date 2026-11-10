@@ -31,7 +31,18 @@ function update_script() {
     exit
   fi
 
-  ensure_dependencies libjpeg-dev poppler-utils file locales
+  ensure_dependencies libjpeg-dev poppler-utils file locales xvfb xauth curl
+
+  wait_http() {
+    local url="$1" timeout="${2:-30}" code
+    local deadline=$((SECONDS + timeout))
+    while ((SECONDS < deadline)); do
+      code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "$url" 2>/dev/null)" || code="000"
+      [[ "$code" =~ ^([23][0-9][0-9]|401|403)$ ]] && return 0
+      sleep 2
+    done
+    return 1
+  }
 
   msg_info "Generating Locales"
   for l in cs_CZ de_DE en_GB en_US es_ES fr_FR id_ID it_IT ja_JP ko_KR \
@@ -75,24 +86,54 @@ function update_script() {
 
   if [[ -f /etc/systemd/system/browserless.service ]]; then
     msg_info "Updating Browserless (Patience)"
-    BROWSERLESS_RELEASE="$(get_latest_github_release "browserless/browserless" false)" || {
-      msg_error "Could not determine the latest Browserless release"
-      exit 1
-    }
-    $STD git -C /opt/browserless fetch origin tag "$BROWSERLESS_RELEASE"
-    $STD git -C /opt/browserless checkout -f "$BROWSERLESS_RELEASE"
-    $STD npm ci --include=optional --include=dev --prefix /opt/browserless
+    systemctl stop browserless
+    if [[ ! -f /opt/browserless/node_modules/@browserless.io/browserless/package.json ]]; then
+      rm -rf /opt/browserless
+    fi
+    mkdir -p /opt/browserless
+    $STD npm install --prefix /opt/browserless @browserless.io/browserless@latest
     $STD /opt/browserless/node_modules/playwright-core/cli.js install --with-deps --force chrome
-    $STD npm run build --prefix /opt/browserless
-    $STD npm run build:function --prefix /opt/browserless
-    $STD npm prune production --prefix /opt/browserless
-    systemctl restart browserless
+    rm -rf \
+      /opt/browserless/node_modules/@browserless.io/browserless/build/routes/chromium \
+      /opt/browserless/node_modules/@browserless.io/browserless/build/routes/firefox \
+      /opt/browserless/node_modules/@browserless.io/browserless/build/routes/webkit \
+      /opt/browserless/node_modules/@browserless.io/browserless/build/routes/edge
+
+    local unit="/etc/systemd/system/browserless.service"
+    local unit_changed=0
+    if ! grep -Fqx 'WorkingDirectory=/opt/browserless' "$unit"; then
+      sed -i "s|^WorkingDirectory=.*|WorkingDirectory=/opt/browserless|" "$unit"
+      unit_changed=1
+    fi
+    if ! grep -q 'node_modules/@browserless.io/browserless/build/index.js' "$unit"; then
+      sed -i "s|^ExecStart=.*|ExecStart=/usr/bin/xvfb-run -a -s \"-screen 0 1920x1080x24 -dpi 96 -nolisten tcp\" /usr/bin/node node_modules/@browserless.io/browserless/build/index.js|" "$unit"
+      unit_changed=1
+    fi
+    if ! grep -q '^Environment=NODE_ENV=production' "$unit"; then
+      sed -i '/^\[Service\]/a Environment=NODE_ENV=production' "$unit"
+      unit_changed=1
+    fi
+    if [[ "$unit_changed" -eq 1 ]]; then
+      $STD systemctl daemon-reload
+    fi
+
+    safe_service_restart browserless
+    if ! wait_http "http://localhost:3000/json/version" 30; then
+      msg_error "Browserless is not responding on port 3000"
+      systemctl status browserless --no-pager -l | head -20 || true
+      exit 1
+    fi
     msg_ok "Updated Browserless"
   else
     msg_error "No Browserless Installation Found!"
   fi
 
-  systemctl restart changedetection
+  safe_service_restart changedetection
+  if ! wait_http "http://127.0.0.1:5000/" 30; then
+    msg_error "changedetection is not responding on port 5000"
+    systemctl status changedetection --no-pager -l | head -20 || true
+    exit 1
+  fi
   msg_ok "Updated successfully!"
   exit
 }

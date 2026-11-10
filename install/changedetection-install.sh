@@ -15,9 +15,6 @@ update_os
 
 msg_info "Installing Dependencies (Patience)"
 $STD apt install -y \
-  git \
-  build-essential \
-  dumb-init \
   libjpeg-dev \
   libatk-bridge2.0-0 \
   libasound2 \
@@ -38,6 +35,7 @@ $STD apt install -y \
   qpdf \
   xdg-utils \
   xvfb \
+  xauth \
   ca-certificates \
   locales \
   poppler-utils \
@@ -69,18 +67,16 @@ EOF
 msg_ok "Installed Change Detection"
 
 msg_info "Installing Browserless & Playwright"
-BROWSERLESS_RELEASE="$(get_latest_github_release "browserless/browserless" false)" || {
-  msg_error "Could not determine the latest Browserless release"
-  exit 1
-}
-mkdir /opt/browserless
 $STD /opt/changedetection/.venv/bin/python -m pip install playwright
-$STD git clone --branch "$BROWSERLESS_RELEASE" https://github.com/browserless/chrome /opt/browserless
-$STD npm ci --include=optional --include=dev --prefix /opt/browserless
+mkdir -p /opt/browserless
+$STD npm install --prefix /opt/browserless @browserless.io/browserless@latest
 $STD /opt/browserless/node_modules/playwright-core/cli.js install --with-deps --force chrome &>/dev/null
-$STD npm run build --prefix /opt/browserless
-$STD npm run build:function --prefix /opt/browserless
-$STD npm prune production --prefix /opt/browserless
+# Chrome-only: routes for browsers we do not install must be removed or the server refuses to start.
+rm -rf \
+  /opt/browserless/node_modules/@browserless.io/browserless/build/routes/chromium \
+  /opt/browserless/node_modules/@browserless.io/browserless/build/routes/firefox \
+  /opt/browserless/node_modules/@browserless.io/browserless/build/routes/webkit \
+  /opt/browserless/node_modules/@browserless.io/browserless/build/routes/edge
 msg_ok "Installed Browserless & Playwright"
 
 msg_info "Installing Font Packages"
@@ -140,8 +136,9 @@ After=network.target
 
 [Service]
 Environment=CONNECTION_TIMEOUT=60000
+Environment=NODE_ENV=production
 WorkingDirectory=/opt/browserless
-ExecStart=/opt/browserless/scripts/start.sh
+ExecStart=/usr/bin/xvfb-run -a -s "-screen 0 1920x1080x24 -dpi 96 -nolisten tcp" /usr/bin/node node_modules/@browserless.io/browserless/build/index.js
 SyslogIdentifier=browserless
 
 [Install]
