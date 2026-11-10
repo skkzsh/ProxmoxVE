@@ -75,16 +75,14 @@ function update_script() {
 
   if [[ -f /etc/systemd/system/browserless.service ]]; then
     msg_info "Updating Browserless (Patience)"
-    $STD git -C /opt/browserless/ fetch --all
-    $STD git -C /opt/browserless/ reset --hard origin/main
+    BROWSERLESS_RELEASE="$(get_latest_github_release "browserless/browserless" false)" || {
+      msg_error "Could not determine the latest Browserless release"
+      exit 1
+    }
+    $STD git -C /opt/browserless fetch origin tag "$BROWSERLESS_RELEASE"
+    $STD git -C /opt/browserless checkout -f "$BROWSERLESS_RELEASE"
     $STD npm ci --include=optional --include=dev --prefix /opt/browserless
-    $STD npm install --save-exact playwright-core@1.62.1 --prefix /opt/browserless
-    $STD /opt/browserless/node_modules/playwright-core/cli.js install --with-deps
-    # Update Chrome separately, as it has to be done with the force option. Otherwise the installation of other browsers will not be done if Chrome is already installed.
-    $STD /opt/browserless/node_modules/playwright-core/cli.js install --force chrome
-    $STD /opt/browserless/node_modules/playwright-core/cli.js install --force msedge
-    $STD /opt/browserless/node_modules/playwright-core/cli.js install chromium firefox webkit
-    $STD npm install --prefix /opt/browserless esbuild typescript ts-node @types/node --save-dev
+    $STD /opt/browserless/node_modules/playwright-core/cli.js install --with-deps --force chrome
     $STD npm run build --prefix /opt/browserless
     $STD npm run build:function --prefix /opt/browserless
     $STD npm prune production --prefix /opt/browserless

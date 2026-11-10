@@ -63,22 +63,21 @@ $STD /opt/changedetection/.venv/bin/python -m ensurepip --upgrade
 $STD /opt/changedetection/.venv/bin/python -m pip install --upgrade pip
 $STD /opt/changedetection/.venv/bin/python -m pip install changedetection.io
 cat <<EOF >/opt/changedetection/.env
-WEBDRIVER_URL=http://127.0.0.1:4444/wd/hub
 PLAYWRIGHT_DRIVER_URL=ws://localhost:3000/chrome?launch=eyJkZWZhdWx0Vmlld3BvcnQiOnsiaGVpZ2h0Ijo3MjAsIndpZHRoIjoxMjgwfSwiaGVhZGxlc3MiOmZhbHNlLCJzdGVhbHRoIjp0cnVlfQ==&blockAds=true
 LC_ALL=en_US.UTF-8
 EOF
 msg_ok "Installed Change Detection"
 
 msg_info "Installing Browserless & Playwright"
+BROWSERLESS_RELEASE="$(get_latest_github_release "browserless/browserless" false)" || {
+  msg_error "Could not determine the latest Browserless release"
+  exit 1
+}
 mkdir /opt/browserless
 $STD /opt/changedetection/.venv/bin/python -m pip install playwright
-$STD git clone https://github.com/browserless/chrome /opt/browserless
+$STD git clone --branch "$BROWSERLESS_RELEASE" https://github.com/browserless/chrome /opt/browserless
 $STD npm ci --include=optional --include=dev --prefix /opt/browserless
-$STD npm install --save-exact playwright-core@1.62.1 --prefix /opt/browserless
-$STD /opt/browserless/node_modules/playwright-core/cli.js install --with-deps &>/dev/null
-$STD /opt/browserless/node_modules/playwright-core/cli.js install --force chrome &>/dev/null
-$STD /opt/browserless/node_modules/playwright-core/cli.js install chromium firefox webkit &>/dev/null
-$STD /opt/browserless/node_modules/playwright-core/cli.js install --force msedge
+$STD /opt/browserless/node_modules/playwright-core/cli.js install --with-deps --force chrome &>/dev/null
 $STD npm run build --prefix /opt/browserless
 $STD npm run build:function --prefix /opt/browserless
 $STD npm prune production --prefix /opt/browserless
