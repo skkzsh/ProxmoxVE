@@ -37,6 +37,7 @@ $STD apt install -y \
   xvfb \
   xauth \
   ca-certificates \
+  gpg \
   locales \
   poppler-utils \
   file
@@ -68,9 +69,12 @@ msg_ok "Installed Change Detection"
 
 msg_info "Installing Browserless & Playwright"
 $STD /opt/changedetection/.venv/bin/python -m pip install playwright
+setup_deb822_repo "google-chrome" \
+  "https://dl.google.com/linux/linux_signing_key.pub" \
+  "https://dl.google.com/linux/chrome/deb/" "stable"
+$STD apt install -y google-chrome-stable
 mkdir -p /opt/browserless
 $STD npm install --prefix /opt/browserless @browserless.io/browserless@latest
-$STD /opt/browserless/node_modules/playwright-core/cli.js install --with-deps --force chrome &>/dev/null
 # Chrome-only: routes for browsers we do not install must be removed or the server refuses to start.
 rm -rf \
   /opt/browserless/node_modules/@browserless.io/browserless/build/routes/chromium \

@@ -31,7 +31,7 @@ function update_script() {
     exit
   fi
 
-  ensure_dependencies libjpeg-dev poppler-utils file locales xvfb xauth curl
+  ensure_dependencies libjpeg-dev poppler-utils file locales xvfb xauth gpg curl
 
   wait_http() {
     local url="$1" timeout="${2:-30}" code
@@ -92,12 +92,17 @@ function update_script() {
     fi
     mkdir -p /opt/browserless
     $STD npm install --prefix /opt/browserless @browserless.io/browserless@latest
-    $STD /opt/browserless/node_modules/playwright-core/cli.js install --with-deps --force chrome
     rm -rf \
       /opt/browserless/node_modules/@browserless.io/browserless/build/routes/chromium \
       /opt/browserless/node_modules/@browserless.io/browserless/build/routes/firefox \
       /opt/browserless/node_modules/@browserless.io/browserless/build/routes/webkit \
       /opt/browserless/node_modules/@browserless.io/browserless/build/routes/edge
+    if [[ ! -f /etc/apt/sources.list.d/google-chrome.sources ]]; then
+      setup_deb822_repo "google-chrome" \
+        "https://dl.google.com/linux/linux_signing_key.pub" \
+        "https://dl.google.com/linux/chrome/deb/" "stable"
+    fi
+    $STD apt install -y google-chrome-stable
 
     local unit="/etc/systemd/system/browserless.service"
     local unit_changed=0
